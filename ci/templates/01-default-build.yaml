@@ -1,0 +1,65 @@
+parameters:
+  - name: variableGroup
+  
+jobs:
+  - job:
+    displayName: "Application Build"
+    variables:
+      - group: SOME_VARIABLE_GROUP_WITH_ACR_CREDENTIALS
+      - group: SOME_VARIABLE_GROUP_WITH_NPM_AUTHENTICATE_VARIABLES
+      - name: SAMPLE_VARIABLE
+        value: 'SAMPLE-VALUE'
+      - name: appFolder
+        value: $(System.DefaultWorkingDirectory)/build  
+      - name: "DEPLOY_VERSION"
+        value: "$(Build.BuildId)"      
+      - ${{ if eq(parameters.variableGroup, 'DEV') }}:
+        - group: "SOME_GROUP_DEV_VARIABLES"
+      - ${{ if eq(parameters.variableGroup, 'SIT') }}:
+        - group: "SOME_GROUP_SIT_VARIABLES"
+      - ${{ if eq(parameters.variableGroup, 'UAT') }}:
+        - group: "SOME_GROUP_UAT_VARIABLES"
+      - ${{ if eq(parameters.variableGroup, 'PROD') }}:
+        - group: "SOME_GROUP_PROD_VARIABLES"
+    steps:
+      - task: ShellScript@2
+        displayName: 'Define Build Variables'
+        inputs:
+          scriptPath: $(System.DefaultWorkingDirectory)/ci/scripts/variables.sh
+
+      - task: NodeTool@0
+        displayName: 'Installing Node'
+        inputs:
+          versionSpec: '14.4'
+
+      - task: npmAuthenticate@0
+        displayName: 'NPM Authenticate'
+        inputs:
+          workingFile: $(appFolder)/.npmrc
+          
+      - template: build-template.yml
+        parameters:
+          steps:
+            - script: npm install
+              displayName: 'NPM Install'
+            - script: npm list || true
+              displayName: 'NPM List'
+            - script: npm run test
+              displayName: 'NPM Test'
+            - script: npm run build
+              displayName: 'NPM Build'
+
+      - task: SnykSecurityScan@0
+        inputs:
+          serviceConnectionEndpoint: 'Some-Snyk-Subscription-API'
+          testType: 'app'
+          targetFile: '$(appFolder)/package.json'
+          monitorOnBuild: true
+          failOnIssues: false
+
+      - ${{ if not(eq(variables['Build.Reason'], 'PullRequest')) }}:
+        - template: docker-config-template.yml
+          parameters:
+            deployVersion: $(DEPLOY_VERSION)
+            projectName: $(projectName)
+            

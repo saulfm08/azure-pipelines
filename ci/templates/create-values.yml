@@ -1,0 +1,20 @@
+steps:
+- task: Bash@3
+  displayName: "Generate new Values.yaml file based on pipeline variable"
+  inputs:
+    targetType: 'inline'
+    script: |
+      set -e
+      touch temp-values.yaml
+      cat > temp-values.yaml << EOF
+      PODS:
+        REPLICAS: $(REPLICAS)
+        RESOURCES:
+          LIMITS_MEMORY: $(LIMITS_MEMORY)
+          LIMITS_CPU: $(LIMITS_CPU)
+          REQUESTS_MEMORY: $(REQUESTS_MEMORY)
+          REQUESTS_CPU: $(REQUESTS_CPU)
+      EOF
+
+      ls -la
+      cat temp-values.yaml

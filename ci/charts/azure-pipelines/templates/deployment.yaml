@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: azure-pipelines
+  labels:
+    account: azure-pipelines
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azure-pipelines
+spec:
+  replicas: {{ .Values.PODS.REPLICAS }}
+  selector:
+    matchLabels:
+      app: azure-pipelines
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: azure-pipelines
+        release: {{ .Release.Name }}
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.pods.SIDECAR.ENABLED | quote }}        
+    spec:
+      serviceAccountName: azure-pipelines
+      terminationGracePeriodSeconds: 180
+      imagePullSecrets:
+        - name: acr-auth
+      containers:
+        - name: azure-pipelines
+          image: 'some-azure-acr-name.azurecr.io/your-image-name:{{ .Chart.AppVersion }}'
+          imagePullPolicy: Always
+          env:
+            - name: SAMPLE_VARIABLE
+              value: {{ .Values.ENV.SAMPLE_VARIABLE }}            
+          ports:
+            - name: az-p-port
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              httpHeaders:
+              - name: Host
+                value: localhost              
+              path: /
+              port: az-p-port
+            initialDelaySeconds: 40
+            failureThreshold: 10
+            timeoutSeconds: 1
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: {{ .Values.PODS.RESOURCES.LIMITS_CPU }}
+              memory: {{ .Values.PODS.RESOURCES.LIMITS_MEMORY }}
+            requests:
+              cpu: {{ .Values.PODS.RESOURCES.REQUESTS_CPU }}
+              memory: {{ .Values.PODS.RESOURCES.REQUESTS_MEMORY }}

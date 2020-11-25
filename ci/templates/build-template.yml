@@ -1,0 +1,9 @@
+# File: templates/jobs.yml
+parameters:
+  steps: []
+steps:
+
+  - ${{ each script in parameters.steps }}:
+      - ${{ each pair in script }}:
+          ${{ if ne(pair.key, 'steps') }}:
+            ${{ pair.key }}: ${{ pair.value }}

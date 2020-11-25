@@ -1,0 +1,60 @@
+parameters:
+  - name: approvals
+  - name: branch
+    
+jobs:
+- deployment: DefaultDeployment
+  displayName: "[${{ parameters.approvals }}] Application Deployment"
+  condition: succeeded()
+  environment: '${{ parameters.approvals }}'
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - checkout: self
+        - checkout: git://<az-devops-project>/<repo-name>@refs/heads/master
+        - checkout: git://<az-devops-project>/<repo-name>@refs/heads/${{ parameters.branch }}
+          persistCredentials: true     
+
+        - task: Bash@3
+          displayName: "Git configurations and show env variables"
+          inputs:
+            targetType: 'inline'
+            script: |
+              cd <repo-name>
+              git config --global user.name "$BUILD_REQUESTEDFOR"
+              git config --global user.email "$BUILD_REQUESTEDFOREMAIL"
+              git checkout $BRANCH
+              git config pull.rebase true
+              git pull origin $BRANCH
+              echo "Show Environment variables"
+              env | sort
+
+        - task: npmAuthenticate@0
+          displayName: 'NPM Authenticate'
+          inputs:
+            workingFile: '$(System.DefaultWorkingDirectory)/$(repo)/.npmrc'
+            
+        - task: Bash@3
+          displayName: "Create NPM AuthToken Variable"
+          inputs:
+            targetType: 'inline'
+            script: |
+              echo "Created '.npmrc' file:"
+              cat $(System.DefaultWorkingDirectory)/$(repo)/.npmrc
+              AUTH_KEY=`sed -n -e 's/^.*_authToken=//p' <<< cat $(System.DefaultWorkingDirectory)/$(repo)/.npmrc`
+              echo 'Setting a new  variable'
+              echo "##vso[task.setvariable variable=NPMAuthToken]$AUTH_KEY"
+
+        - template: create-values.yml
+        
+        - task: Bash@3
+          displayName: "[${{ parameters.approvals }}] Push to a repo watched by Argo CD"
+          inputs:
+            filePath: $(System.DefaultWorkingDirectory)/<repo-name>/scripts/commit-charts.sh
+
+        - task: Bash@3
+          displayName: "[${{ parameters.approvals }}] Check Deployment using a given url"
+          inputs:
+            filePath: $(System.DefaultWorkingDirectory)/<repo-name>/scripts/check-deployment.sh
+              

@@ -1,0 +1,107 @@
+# This is a simple Azure Pipelines sample
+# It uses Microsoft Hosted Poll to build a Sample Node JS Application
+pool:
+  vmImage: 'ubuntu-latest'
+
+pr:
+  branches:
+    include:
+    - master
+    exclude:
+    - feature/*
+    - bugfix/*
+
+trigger:
+  - master
+
+parameters:
+  - name: variableGroup
+    displayName: "Variable Group used to build"
+    type: string
+    default: "DEV"
+    values:
+    - "DEV"
+    - "QA"
+    - "SIT"
+    - "UAT"
+    - "PROD"    
+
+variables:
+  - group: SOME_VARIABLE_GROUP_WITH_ACR_CREDENTIALS
+  - name: SAMPLE_VARIABLE
+    value: 'SAMPLE-VALUE'
+  - name: appFolder
+    value: $(System.DefaultWorkingDirectory)/build  
+  - name: "DEPLOY_VERSION"
+    value: "$(Build.BuildId)"
+  - ${{ if eq(parameters.variableGroup, 'DEV') }}:
+    - group: "SAMPLE_DEV_VARIABLES"
+  - ${{ if eq(parameters.variableGroup, 'QA') }}:
+    - group: "SAMPLE_QA_VARIABLES"
+  - ${{ if eq(parameters.variableGroup, 'SIT') }}:
+    - group: "SAMPLE_SIT_VARIABLES"
+  - ${{ if eq(parameters.variableGroup, 'UAT') }}:
+    - group: "SAMPLE_UAT_VARIABLES"
+  - ${{ if eq(parameters.variableGroup, 'PROD') }}:
+    - group: "SAMPLE_PROD_VARIABLES"
+
+steps:
+  - task: ShellScript@2
+    displayName: 'Define .env Variables'
+    inputs:
+      scriptPath: ci/scripts/variables.sh
+
+  - task: NodeTool@0
+    displayName: 'Installing Node'
+    inputs:
+      versionSpec: '14.4'
+
+  - task: npmAuthenticate@0
+    displayName: 'NPM Authenticate'
+    inputs:
+      workingFile: '.npmrc'
+      
+  - template: ci/templates/build-template.yml
+    parameters:
+      steps:
+        - script: npm install
+          displayName: 'NPM Install'
+        - script: npm run <some-custom-script>
+          displayName: 'NPM Merge Dependencies'
+        - script: npm list || true
+          displayName: 'NPM List'
+        - script: npm run test
+          displayName: 'NPM Test'
+        - script: npm run build
+          displayName: 'NPM Build'
+
+  - task: SnykSecurityScan@0
+    inputs:
+      serviceConnectionEndpoint: 'Some-Snyk-Subscription'
+      testType: 'app'
+      targetFile: '$(appFolder)/package.json'
+      monitorOnBuild: true
+      failOnIssues: false
+
+  - ${{ if not(eq(variables['Build.Reason'], 'PullRequest')) }}:
+    - template: ci/templates/docker-config-template.yml
+      parameters:
+        deployVersion: $(DEPLOY_VERSION)
+        projectName: $(projectName)
+        
+    - task: Bash@3
+      displayName: 'Overwrite Chart.yaml version to $(DEPLOY_VERSION)'
+      inputs:
+        targetType: 'inline'
+        script: |
+          cd $(System.DefaultWorkingDirectory)
+          CHARTPATH=`find ci/ -name Chart.yaml`
+          echo "sed -i \"s/0.0.0/'$(DEPLOY_VERSION)'/g\" $CHARTPATH"
+          sed -i "s/0.0.0/\"$(DEPLOY_VERSION)\"/g" $CHARTPATH
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publishing Artifacts (Helm Charts)'
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/ci'
+        ArtifactName: 'drop-folder'
+        publishLocation: 'Container'     

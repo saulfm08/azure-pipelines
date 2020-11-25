@@ -1,0 +1,94 @@
+# This is an Azure Multi Stage Pipelines sample
+# It uses Microsoft Hosted Poll to build a Sample Node JS Application
+pool:
+  vmImage: 'ubuntu-latest'
+
+pr:
+  branches:
+    include:
+    - master
+    exclude:
+    - feature/*
+    - bugfix/*  
+
+trigger:
+  branches:
+    include:
+      - master
+  paths:
+    exclude:
+      - ./*.yml
+
+variables:
+  - group: SOME_VARIABLE_GROUP_WITH_ACR_CREDENTIALS
+  - group: SOME_VARIABLE_GROUP_WITH_NPM_AUTHENTICATE_VARIABLES
+  - name: "DEPLOY_VERSION"
+    value: "$(Build.BuildId)"
+
+stages:
+- stage: StartStage
+  displayName: "▶️ Start Stage"
+  jobs:
+    - job: StartStage
+      displayName: "▶️ Start Stage"
+      steps:
+        - checkout: none
+        - bash: env | sort
+          displayName: "Environment Variables"
+
+# Build Stage
+- stage: ApplicationDefaultBuild
+  displayName: "[BUILD]Run Application Default Build"
+  dependsOn: StartStage
+  jobs:
+    - template: ci/templates/01-default-build.yaml
+
+# Deployment Stages
+- ${{ if not(eq(variables['Build.Reason'], 'PullRequest')) }}:
+  - stage: Application_Deploy_DEV
+    displayName: "[DEPLOY-DEV] DEV Application Deployment"
+    dependsOn: ApplicationDefaultBuild
+    condition: succeeded()
+    variables:
+      - group: 'APPLICATION_DEV_VARIABLES'
+    jobs:
+      - template: ci/templates/02-default-deployment.yaml
+        parameters:
+          approvals: "ENV-DEV"
+          branch: "dev"
+
+  - stage: Application_Deploy_SIT
+    displayName: "[DEPLOY-SIT] SIT Application Deployment"
+    dependsOn: Application_Deploy_DEV
+    condition: succeeded()
+    variables:
+      - group: 'APPLICATION_SIT_VARIABLES'
+    jobs:
+      - template: ci/templates/02-default-deployment.yaml
+        parameters:
+          approvals: "ENV-SIT"
+          branch: "sit"
+
+  - stage: Application_Deploy_UAT
+    displayName: "[DEPLOY-UAT] UAT Application Deployment"
+    dependsOn: Application_Deploy_SIT
+    condition: succeeded()
+    variables:
+      - group: 'APPLICATION_UAT_VARIABLES'
+    jobs:
+      - template: ci/templates/02-default-deployment.yaml
+        parameters:
+          approvals: "ENV-UAT"
+          branch: "uat"
+
+  - stage: Application_Deploy_PROD
+    displayName: "[DEPLOY-PROD] PROD Application Deployment"
+    dependsOn: Application_Deploy_UAT
+    condition: succeeded()
+    variables:
+      - group: 'APPLICATION_PROD_VARIABLES'
+    jobs:
+      - template: ci/templates/02-default-deployment.yaml
+        parameters:
+          approvals: "ENV-PROD"
+          branch: "prod"       

@@ -1,0 +1,17 @@
+parameters:
+  deployVersion: ''
+  projectName: ''
+
+steps:
+  - script: |
+      docker build -t $(registryServerName)/${{parameters.projectName}}:${{parameters.deployVersion}} .
+    displayName: 'Docker Build and Tag'
+
+  - task: AzureCLI@1
+    displayName: 'Docker Push'
+    inputs:
+      azureSubscription: 'SOME AZURE SUBSCRIPTION NAME'
+      scriptLocation: inlineScript
+      inlineScript: |
+        az acr login --name $(azure-registry-name)
+        docker push $(registryServerName)/${{parameters.projectName}}:${{parameters.deployVersion}}
