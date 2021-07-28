@@ -1,0 +1,84 @@
+jobs:
+  - job:
+    displayName: "Package Build"
+    variables:
+      - name: "projectName"
+        value: "node-js-interactive-global"
+      - name: appFolder
+        value: "$(System.DefaultWorkingDirectory)/$(repo)/interactive"
+      - name: "DEPLOY_VERSION"
+        value: "$(Build.BuildId)"
+
+    steps:
+      # This downloads the current repo where the yaml file is
+      # The "persistCredentials" is used to persist the repo credentials so you can commit to the branch if you want
+      - checkout: self 
+        persistCredentials: true
+      # This downloads an aditional repo from Azure Devops
+      #- checkout: git://<prject-name>/<repo-name>@refs/heads/<branch>
+      - checkout: git://Project_Test/repo-utils@refs/heads/master
+
+      - task: NodeTool@0
+        displayName: "Node Install"
+        inputs:
+          versionSpec: "$(nodeVersion)"
+
+      - task: npmAuthenticate@0
+        displayName: 'NPM Authenticate'
+        inputs:
+          workingFile: '$(appFolder)/.npmrc'
+
+      - task: Npm@1
+        displayName: 'NPM Install'
+        inputs:
+          command: 'install'
+          workingDir: $(appFolder)
+
+      - script: (cd $(appFolder) && npm run test && cd ..)
+        displayName: 'NPM Test'
+
+      - ${{ if not(eq(variables['Build.Reason'], 'PullRequest')) }}:
+        - task: DeleteFiles@1
+          inputs:
+            Contents: '$(appFolder)/node_modules'
+        
+        - task: Bash@3
+          displayName: 'Validate Package Version'
+          inputs:
+            filePath: '$(System.DefaultWorkingDirectory)/repo-utils/scripts/auto-npm-patch.sh'
+        
+        - task: Npm@1
+          displayName: "NPM Publish"
+          inputs:
+            command: publish
+            workingDir: $(appFolder)
+            publishRegistry: useFeed
+            publishFeed: $(publishFeedId)
+
+        - task: ArchiveFiles@2
+          displayName: 'Archive Package'
+          inputs:
+            rootFolderOrFile: '$(appFolder)/package.json'
+            includeRootFolder: false
+            archiveType: 'zip'
+            archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+            replaceExistingArchive: true
+
+        - task: ArchiveFiles@2
+          displayName: 'Archive E2E'
+          inputs:
+            rootFolderOrFile: '$(System.DefaultWorkingDirectory)/$(repo)/e2e-tests'
+            includeRootFolder: false
+            archiveType: 'zip'
+            archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId)-e2e.zip'
+            replaceExistingArchive: true
+
+        - task: PublishBuildArtifacts@1
+          displayName: 'Publishing Artifacts'
+          inputs:
+            PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+            ArtifactName: 'node-package'
+            publishLocation: 'Container'
+
+
+            
