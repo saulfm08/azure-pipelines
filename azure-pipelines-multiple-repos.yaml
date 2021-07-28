@@ -17,6 +17,9 @@ jobs:
       # This downloads an aditional repo from Azure Devops
       #- checkout: git://<prject-name>/<repo-name>@refs/heads/<branch>
       - checkout: git://Project_Test/repo-utils@refs/heads/master
+      # Be careful when using the `checkout` because some variables like $(System.DefaultWorkingDirectory) will change its default value 
+      # - when downloading a single repo, the variable $(System.DefaultWorkingDirectory) points to inside the downloaded repo
+      # - but when downloading multiple repos, $(System.DefaultWorkingDirectory) points to the parent folder where the repos were downloaded
 
       - task: NodeTool@0
         displayName: "Node Install"
